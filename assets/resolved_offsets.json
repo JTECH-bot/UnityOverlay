@@ -1,0 +1,26 @@
+{
+  "game": "offline-test-build",
+  "offsets": {
+    "GameAssembly": "0x7A3C0000",
+
+    "EntityList":   "0x7A512340",
+    "EntityCount":  "0x7A512348",
+    "EntityStride": 8,
+    "MaxEntities":  128,
+    "LocalPlayer":  "0x7A512350",
+
+    "Position":     128,
+    "Head":         132,
+    "Health":       248,
+    "Team":         252,
+    "Name":         264,
+
+    "ViewMatrix":   "0x7A520000",
+    "CameraYaw":    "0x7A520200",
+    "CameraPitch":  "0x7A520204",
+    "HeadHeight":   165,
+
+    "UnlockFlags":  "0x7A530010",
+    "TriggerFlag":  "0x7A530020"
+  }
+}

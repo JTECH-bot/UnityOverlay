@@ -1,0 +1,30 @@
+{
+  "visuals": {
+    "lines": true,
+    "boxes": true,
+    "health": true,
+    "names": true,
+    "skeleton": false,
+    "origin": false,
+    "max_distance": 150.0
+  },
+  "aimbot": {
+    "enabled": false,
+    "aim_lock": false,
+    "triggerbot": false,
+    "fov": 35.0,
+    "smoothness": 6.0,
+    "target_head": true
+  },
+  "camera": {
+    "freecam": false,
+    "fov": 60.0,
+    "timescale": 1.0
+  },
+  "player": {
+    "noclip": false,
+    "speed_multiplier": 1.0,
+    "infinite_jump": false
+  },
+  "menu_open": true
+}
