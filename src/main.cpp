@@ -13,6 +13,8 @@
 #include <pthread.h>
 #include <unistd.h>
 #include <dlfcn.h>
+#include <sys/stat.h>
+#include <cstdio>
 
 #include <atomic>
 #include <cstring>
@@ -37,6 +39,7 @@ EglSwapBuffersFn g_orig_swap = nullptr;
 
 std::atomic<bool> g_imgui_ready{false};
 std::atomic<bool> g_menu_visible{true};
+std::atomic<bool> g_installer_started{false};
 
 ov::Config   g_config;
 ov::Offsets  g_offsets;
@@ -50,6 +53,25 @@ std::string g_assets_dir = "/data/local/tmp/overlay_assets";
 std::atomic<bool>  g_touch_down{false};
 std::atomic<float> g_touch_x{0.f};
 std::atomic<float> g_touch_y{0.f};
+
+// ---------------------------------------------------------------------------
+bool write_text_file(const std::string& path, const char* data, size_t len) {
+    FILE* f = fopen(path.c_str(), "wb");
+    if (!f) return false;
+    bool ok = len == 0 || fwrite(data, 1, len, f) == len;
+    fclose(f);
+    return ok;
+}
+
+void reload_runtime_config() {
+    g_config  = ov::Config{};
+    ov::load_config(g_assets_dir, g_config);
+    ov::load_feature_json(g_assets_dir, g_config);
+    g_offsets = ov::load_offsets(g_assets_dir);
+    g_resolved.resolve(g_offsets);
+    g_reader.bind(g_resolved);
+    g_reader.refresh();
+}
 
 // ---------------------------------------------------------------------------
 void init_imgui(int width, int height) {
@@ -69,12 +91,7 @@ void init_imgui(int width, int height) {
 
     ImGui_ImplOpenGL3_Init("#version 300 es");
 
-    g_config  = ov::Config{};
-    ov::load_config(g_assets_dir, g_config);
-    g_offsets = ov::load_offsets(g_assets_dir);
-    g_resolved.resolve(g_offsets);
-    g_reader.bind(g_resolved);
-    g_reader.refresh();
+    reload_runtime_config();
 
     g_imgui_ready.store(true);
     LOGI("ImGui ready (%dx%d, %zu offsets, base=0x%llX)", width, height,
@@ -129,7 +146,7 @@ void render_frame(int width, int height) {
     static int rng_tick = 0;
     if (++rng_tick >= 8) { rng_tick = 0; g_reader.refresh(); }
 
-    menu::update_aimbot(g_config, g_reader, width, height);
+    g_reader.tick(g_config, width, height);
 
     if (g_menu_visible.load()) {
         menu::draw(g_config, g_offsets, g_actions);
@@ -173,11 +190,7 @@ EGLBoolean hook_eglSwapBuffers(EGLDisplay dpy, EGLSurface surface) {
 
         if (g_actions.reload_config) {
             g_actions.reload_config = false;
-            g_offsets = ov::load_offsets(g_assets_dir);
-            ov::load_config(g_assets_dir, g_config);
-            g_resolved.resolve(g_offsets);
-            g_reader.bind(g_resolved);
-            g_reader.refresh();
+            reload_runtime_config();
             LOGI("config reloaded (%zu offsets)", g_offsets.values.size());
         }
         if (g_actions.save_config) {
@@ -186,27 +199,20 @@ EGLBoolean hook_eglSwapBuffers(EGLDisplay dpy, EGLSurface surface) {
         }
         if (g_actions.dump_scene) {
             g_actions.dump_scene = false;
-            ov::Entity ents[64];
-            int n = g_reader.read_all(ents, 64);
-            LOGI("scene dump: %d entities", n);
-            for (int i = 0; i < n; ++i) {
-                LOGI("  [%d] %p pos(%.2f %.2f %.2f) hp=%.1f name=%s", i,
-                     (void*)ents[i].addr, ents[i].pos.x, ents[i].pos.y, ents[i].pos.z,
-                     ents[i].health, ents[i].name);
-            }
+            g_reader.dump();
         }
-        if (g_actions.unlock_weapons || g_actions.unlock_skins) {
-            if (g_resolved.unlock_flags) {
-                uint32_t flags = ov::read_mem<uint32_t>(g_resolved.unlock_flags);
-                if (g_actions.unlock_weapons) flags |= 0x1;
-                if (g_actions.unlock_skins)   flags |= 0x2;
-                ov::write_mem<uint32_t>(g_resolved.unlock_flags, flags);
-                LOGI("unlock flags -> 0x%X", flags);
-            } else {
-                LOGE("UnlockFlags offset is not set");
-            }
+        if (g_actions.unlock_all || g_actions.ultra_unlock ||
+            g_actions.unlock_weapons || g_actions.unlock_skins) {
+            const bool skins = g_actions.ultra_unlock || g_actions.unlock_skins;
+            g_reader.unlock_all(skins, false);
+            g_actions.unlock_all = false;
+            g_actions.ultra_unlock = false;
             g_actions.unlock_weapons = false;
             g_actions.unlock_skins = false;
+        }
+        if (g_actions.skip_tutorial) {
+            g_actions.skip_tutorial = false;
+            g_reader.unlock_all(false, true);
         }
     }
 
@@ -255,6 +261,7 @@ void* installer_thread(void*) {
 }
 
 void start_installer() {
+    if (g_installer_started.exchange(true)) return;
     pthread_t t;
     if (pthread_create(&t, nullptr, installer_thread, nullptr) == 0) {
         pthread_detach(t);
@@ -267,6 +274,99 @@ void start_installer() {
 // JNI
 // ---------------------------------------------------------------------------
 extern "C" {
+
+
+// ---------------------------------------------------------------------------
+// JamesTool / LSPatch module bridge (com.kanha.modmenu.ModMenu)
+// ---------------------------------------------------------------------------
+JNIEXPORT void JNICALL modmenu_init(JavaVM*, const char*) {
+    start_installer();
+}
+
+JNIEXPORT void JNICALL
+Java_com_kanha_modmenu_ModMenu_nativeSetAssets(JNIEnv*, jclass, jobject) {
+    // Dynamic IL2CPP resolution does not need the target's asset manager.
+    // The Java side passes filesDir through nativeInit, which is writable.
+}
+
+JNIEXPORT void JNICALL
+Java_com_kanha_modmenu_ModMenu_nativeInit(JNIEnv* env, jclass, jstring config, jstring filesDir) {
+    if (filesDir) {
+        const char* c = env->GetStringUTFChars(filesDir, nullptr);
+        if (c) {
+            g_assets_dir = c;
+            env->ReleaseStringUTFChars(filesDir, c);
+        }
+    }
+    mkdir(g_assets_dir.c_str(), 0700);
+
+    if (config) {
+        const char* c = env->GetStringUTFChars(config, nullptr);
+        if (c) {
+            size_t len = strlen(c);
+            if (len > 2 && c[0] == '{') {
+                write_text_file(g_assets_dir + "/mod_config.json", c, len);
+            }
+            env->ReleaseStringUTFChars(config, c);
+        }
+    }
+    reload_runtime_config();
+    LOGI("modmenu_init assets=%s offsets=%zu base=0x%llX", g_assets_dir.c_str(),
+         g_offsets.values.size(), (unsigned long long)g_resolved.base);
+}
+
+JNIEXPORT jint JNICALL
+Java_com_kanha_modmenu_ModMenu_nativeGet(JNIEnv* env, jclass, jstring key) {
+    if (!key) return 0;
+    const char* k = env->GetStringUTFChars(key, nullptr);
+    int v = 0;
+    if (k) {
+        if (!strcmp(k, "visible") || !strcmp(k, "menu_open")) v = g_menu_visible.load() ? 1 : 0;
+        else if (!strcmp(k, "aimbot")) v = g_config.aimbot.enabled ? 1 : 0;
+        else if (!strcmp(k, "esp")) v = g_config.visuals.draw_boxes ? 1 : 0;
+        env->ReleaseStringUTFChars(key, k);
+    }
+    return v;
+}
+
+JNIEXPORT void JNICALL
+Java_com_kanha_modmenu_ModMenu_nativeSet(JNIEnv* env, jclass, jstring key, jint value) {
+    if (!key) return;
+    const char* k = env->GetStringUTFChars(key, nullptr);
+    if (k) {
+        if (!strcmp(k, "visible") || !strcmp(k, "menu_open")) g_menu_visible.store(value != 0);
+        else if (!strcmp(k, "aimbot")) g_config.aimbot.enabled = value != 0;
+        else if (!strcmp(k, "esp")) g_config.visuals.draw_boxes = value != 0;
+        env->ReleaseStringUTFChars(key, k);
+    }
+}
+
+JNIEXPORT jstring JNICALL
+Java_com_kanha_modmenu_ModMenu_nativeVersion(JNIEnv* env, jclass) {
+    return env->NewStringUTF("JamesTool IL2CPP 4.0");
+}
+
+JNIEXPORT jboolean JNICALL
+Java_com_kanha_modmenu_ModMenu_nativeTouch(JNIEnv*, jclass, jint action, jfloat x, jfloat y) {
+    if (action == 0) {
+        g_touch_x.store(x); g_touch_y.store(y); g_touch_down.store(true);
+    } else if (action == 1) {
+        g_touch_x.store(x); g_touch_y.store(y);
+    } else {
+        g_touch_down.store(false);
+    }
+    return JNI_TRUE;
+}
+
+JNIEXPORT jboolean JNICALL
+Java_com_kanha_modmenu_ModMenu_nativeVisible(JNIEnv*, jclass) {
+    return g_menu_visible.load() ? JNI_TRUE : JNI_FALSE;
+}
+
+JNIEXPORT void JNICALL
+Java_com_kanha_modmenu_ModMenu_nativeSetVisible(JNIEnv*, jclass, jboolean visible) {
+    g_menu_visible.store(visible == JNI_TRUE);
+}
 
 JNIEXPORT jint JNI_OnLoad(JavaVM* vm, void* /*reserved*/) {
     JNIEnv* env = nullptr;

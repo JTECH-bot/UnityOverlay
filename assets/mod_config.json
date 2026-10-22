@@ -1,19 +1,27 @@
 {
   "visuals": {
-    "lines": true,
+    "lines": false,
     "boxes": true,
     "health": true,
     "names": true,
     "skeleton": false,
-    "origin": false,
-    "max_distance": 150.0
+    "team": false,
+    "distance": true,
+    "enemy_color": true,
+    "chams": false,
+    "uav": false,
+    "radar": false,
+    "max_distance": 250.0
   },
   "aimbot": {
     "enabled": false,
     "aim_lock": false,
     "triggerbot": false,
+    "magic_bullet": false,
+    "visible_only": false,
     "fov": 35.0,
     "smoothness": 6.0,
+    "hitbox": 0,
     "target_head": true
   },
   "camera": {
@@ -22,9 +30,41 @@
     "timescale": 1.0
   },
   "player": {
+    "god_mode": false,
     "noclip": false,
-    "speed_multiplier": 1.0,
-    "infinite_jump": false
+    "infinite_jump": false,
+    "bunny_jump": false,
+    "speed_hack": false,
+    "jump_boost": false,
+    "slide_boost": false,
+    "free_climb": false,
+    "fast_swim": false,
+    "fast_parachute": false,
+    "ability_cooldown": false,
+    "infinite_ammo": false,
+    "speed_multiplier": 1.6,
+    "jump_multiplier": 1.8,
+    "slide_multiplier": 2.0,
+    "swim_multiplier": 2.0,
+    "parachute_multiplier": 3.0
+  },
+  "weapon": {
+    "no_recoil": false,
+    "no_spread": false,
+    "fast_reload": false,
+    "fast_switch": false,
+    "fast_scope": false,
+    "rapid_fire": false,
+    "no_muzzle_flash": false,
+    "no_flash": false,
+    "no_camera_shake": false,
+    "small_crosshair": false,
+    "always_knife": false,
+    "infinite_ammo": false,
+    "magic_bullet": false,
+    "fire_rate_multiplier": 1.8,
+    "reload_multiplier": 4.0,
+    "damage_multiplier": 2.0
   },
   "menu_open": true
 }

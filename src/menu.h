@@ -10,6 +10,10 @@ struct Actions {
     bool reload_config   = false;
     bool save_config     = false;
     bool dump_scene      = false;
+    bool unlock_all      = false;
+    bool ultra_unlock    = false;
+    bool skip_tutorial   = false;
+    // kept for the older JamesTool Java bridge
     bool unlock_weapons  = false;
     bool unlock_skins    = false;
 };
@@ -23,7 +27,7 @@ void draw(ov::Config& cfg, const ov::Offsets& offs, Actions& act);
 void draw_overlay(const ov::Config& cfg, const ov::EntityReader& reader,
                   int width, int height);
 
-// Runs one aimbot tick: target select, angle smoothing, camera write.
+// Compatibility shim: the reader tick performs aim and feature writes.
 void update_aimbot(const ov::Config& cfg, const ov::EntityReader& reader,
                    int width, int height);
 
